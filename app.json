@@ -16,7 +16,12 @@
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "edgeToEdgeEnabled": true
+      "associatedDomains":[
+        "applinks:integral-mako-19.clerk.accounts.dev",
+        "webcredentials:integral-mako-19.clerk.accounts.dev"
+      ],
+      "edgeToEdgeEnabled": true,
+      "package": "com.mhmd76.chatapp"
     },
     "web": {
       "bundler": "metro",
@@ -33,10 +38,27 @@
           "resizeMode": "contain",
           "backgroundColor": "#ffffff"
         }
-      ]
+      ],
+      "expo-secure-store",
+      [
+        "expo-build-properties",
+        {
+          "ios":{
+            "deploymentTarget":"16.0"
+          }
+        }
+      
+      ],
+      "expo-web-browser"
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "cf975475-a601-4411-971c-d08cb7e36613"
+      }
     }
   }
 }
