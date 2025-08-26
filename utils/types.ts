@@ -15,12 +15,14 @@ interface Message {
   $collectionId?: string;
   $databaseId?: string;
   $permissions?: any[];
-  content: string;
+  content: string; // text or URL
   senderId: string;
   senderName: string;
   senderPhoto: string;
   chatRoomId: string;
+  type: "text" | "image" | "file" | "audio"; // new field
 }
+
 
 interface User {
   id: string;
