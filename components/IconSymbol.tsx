@@ -20,6 +20,7 @@ const MAPPING = {
   'chevron.right': 'chevron-right',
   'chevron.left': 'chevron-left',
     'plus': 'add', // <--- Add this
+    'paperplane': 'send', // <--- Add this
 
 } as IconMapping;
 

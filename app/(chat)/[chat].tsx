@@ -1,3 +1,4 @@
+import { Primary } from "@/assets/colors";
 import { IconSymbol } from "@/components/IconSymbol";
 import { Text } from "@/components/Text";
 import { appwriteConfig, client, db } from "@/utils/appwrite";
@@ -6,77 +7,47 @@ import { useUser } from "@clerk/clerk-expo";
 import { LegendList } from "@legendapp/list";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { ID, Query } from "appwrite";
-import { LinearGradient } from 'expo-linear-gradient';
 import { Link, Stack, useLocalSearchParams } from "expo-router";
 import * as React from "react";
 import {
     ActivityIndicator,
+    Animated,
     Image,
-    Keyboard,
     KeyboardAvoidingView,
     Platform,
     Pressable,
-    StatusBar,
     TextInput,
+      Keyboard,
+    TouchableWithoutFeedback,
     View,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
 export default function ChatRoomScreen() {
   const { chat: chatRoomId } = useLocalSearchParams();
   const { user } = useUser();
 
   if (!chatRoomId) {
-    return (
-      <View style={{ 
-        flex: 1, 
-        justifyContent: "center", 
-        alignItems: "center",
-        backgroundColor: "#0a0a0a" 
-      }}>
-        <IconSymbol name="exclamationmark.triangle" size={48} color="#FF6B6B" />
-        <Text style={{ marginTop: 16, fontSize: 18, color: "#FF6B6B" }}>
-          We couldn't find this chat room 🥲
-        </Text>
-      </View>
-    );
+    return <Text>We couldn't find this chat room 🥲</Text>;
   }
 
   const [messageContent, setMessageContent] = React.useState("");
   const [chatRoom, setChatRoom] = React.useState<ChatRoom | null>(null);
   const [messages, setMessages] = React.useState<Message[]>([]);
   const [isLoading, setIsLoading] = React.useState(true);
-  const [keyboardHeight, setKeyboardHeight] = React.useState(0);
+  const [showScrollIndicator, setShowScrollIndicator] = React.useState(false);
+  const [unreadCount, setUnreadCount] = React.useState(0);
+  const [isAtBottom, setIsAtBottom] = React.useState(true);
+  
   const headerHeight = Platform.OS === "ios" ? useHeaderHeight() : 0;
+  const insets = useSafeAreaInsets();
   const textInputRef = React.useRef<TextInput>(null);
+  const listRef = React.useRef<any>(null);
+  const scrollIndicatorAnimation = React.useRef(new Animated.Value(0)).current;
+  const pulseAnimation = React.useRef(new Animated.Value(1)).current;
 
   React.useEffect(() => {
     handleFirstLoad();
-  }, []);
-
-  // Keyboard handling for Android
-  React.useEffect(() => {
-    const keyboardDidShowListener = Keyboard.addListener(
-      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
-      (e) => {
-        if (Platform.OS === 'android') {
-          setKeyboardHeight(e.endCoordinates.height);
-        }
-      }
-    );
-    const keyboardDidHideListener = Keyboard.addListener(
-      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
-      () => {
-        if (Platform.OS === 'android') {
-          setKeyboardHeight(0);
-        }
-      }
-    );
-
-    return () => {
-      keyboardDidShowListener?.remove();
-      keyboardDidHideListener?.remove();
-    };
   }, []);
 
   // Focus the text input when the component mounts
@@ -88,19 +59,91 @@ export default function ChatRoomScreen() {
     }
   }, [isLoading]);
 
-  // Subscribe to messages
+  // Subscribe to new/updated messages in this chat room
   React.useEffect(() => {
-    const channel = `databases.${appwriteConfig.db}.collections.${appwriteConfig.col.chatrooms}.documents.${chatRoomId}`;
+    const channel = `databases.${appwriteConfig.db}.collections.${appwriteConfig.col.messages}.documents`;
 
-    const unsubscribe = client.subscribe(channel, () => {
-      console.log("chat room updated");
-      getMessages();
+    const unsubscribe = client.subscribe(channel, (event) => {
+      const payload = event?.payload as any;
+      if (payload?.chatRoomId === chatRoomId) {
+        console.log("message list updated for chat", chatRoomId);
+        
+        // Check if user is not at bottom when new message arrives
+        if (!isAtBottom && payload?.senderId !== user?.id) {
+          setUnreadCount(prev => prev + 1);
+          showScrollToBottomIndicator();
+        }
+        
+        getMessages();
+      }
     });
 
     return () => {
       unsubscribe();
     };
-  }, [chatRoomId]);
+  }, [chatRoomId, isAtBottom]);
+
+  const showScrollToBottomIndicator = () => {
+    setShowScrollIndicator(true);
+    
+    // Animate the indicator appearing
+    Animated.spring(scrollIndicatorAnimation, {
+      toValue: 1,
+      useNativeDriver: true,
+      tension: 150,
+      friction: 8,
+    }).start();
+
+    // Pulse animation for attention
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnimation, {
+          toValue: 1.1,
+          duration: 800,
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulseAnimation, {
+          toValue: 1,
+          duration: 800,
+          useNativeDriver: true,
+        }),
+      ])
+    ).start();
+  };
+
+  const hideScrollToBottomIndicator = () => {
+    Animated.timing(scrollIndicatorAnimation, {
+      toValue: 0,
+      duration: 200,
+      useNativeDriver: true,
+    }).start(() => {
+      setShowScrollIndicator(false);
+      setUnreadCount(0);
+    });
+    pulseAnimation.stopAnimation();
+    pulseAnimation.setValue(1);
+  };
+
+  const scrollToBottom = () => {
+    if (listRef.current) {
+      listRef.current.scrollToEnd({ animated: true });
+      hideScrollToBottomIndicator();
+      setIsAtBottom(true);
+    }
+  };
+
+  const handleScroll = (event: any) => {
+    const { layoutMeasurement, contentOffset, contentSize } = event.nativeEvent;
+    const paddingToBottom = 20;
+    const isScrolledToBottom = layoutMeasurement.height + contentOffset.y >= 
+      contentSize.height - paddingToBottom;
+    
+    setIsAtBottom(isScrolledToBottom);
+    
+    if (isScrolledToBottom && showScrollIndicator) {
+      hideScrollToBottomIndicator();
+    }
+  };
 
   async function handleFirstLoad() {
     try {
@@ -119,12 +162,13 @@ export default function ChatRoomScreen() {
       appwriteConfig.col.chatrooms,
       chatRoomId as string
     );
+
     setChatRoom(document as unknown as ChatRoom);
   }
 
   async function getMessages() {
     try {
-      const { documents } = await db.listDocuments(
+      const { documents, total } = await db.listDocuments(
         appwriteConfig.db,
         appwriteConfig.col.messages,
         [
@@ -160,13 +204,9 @@ export default function ChatRoomScreen() {
         message
       );
       setMessageContent("");
-
-      await db.updateDocument(
-        appwriteConfig.db,
-        appwriteConfig.col.chatrooms,
-        chatRoomId as string,
-        { $updatedAt: new Date().toISOString() }
-      );
+      
+      // Auto-scroll to bottom when user sends a message
+      setTimeout(() => scrollToBottom(), 100);
     } catch (error) {
       console.error(error);
     }
@@ -174,144 +214,17 @@ export default function ChatRoomScreen() {
 
   if (isLoading) {
     return (
-      <LinearGradient
-        colors={['#1a1a2e', '#16213e', '#0f3460']}
-        style={{ flex: 1, justifyContent: "center", alignItems: "center" }}
-      >
-        <View style={{
-          backgroundColor: 'rgba(255,255,255,0.1)',
-          padding: 30,
-          borderRadius: 20,
-          alignItems: 'center'
-        }}>
-          <ActivityIndicator size="large" color="#4ECDC4" />
-          <Text style={{ marginTop: 16, color: '#4ECDC4', fontSize: 16 }}>
-            Loading messages...
-          </Text>
-        </View>
-      </LinearGradient>
+      <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
+        <ActivityIndicator />
+      </View>
     );
   }
 
-  const renderMessage = ({ item }: { item: Message }) => {
-    const isSender = item.senderId === user?.id;
-    
-    return (
-      <View
-        style={{
-          paddingHorizontal: 16,
-          paddingVertical: 8,
-          flexDirection: "row",
-          alignItems: "flex-end",
-          gap: 12,
-          maxWidth: "85%",
-          alignSelf: isSender ? "flex-end" : "flex-start",
-        }}
-      >
-        {!isSender && (
-          <View style={{
-            shadowColor: '#000',
-            shadowOffset: { width: 0, height: 2 },
-            shadowOpacity: 0.25,
-            shadowRadius: 3.84,
-            elevation: 5,
-          }}>
-            <Image
-              source={{ uri: item.senderPhoto || 'https://via.placeholder.com/40' }}
-              style={{ 
-                width: 36, 
-                height: 36, 
-                borderRadius: 18,
-                borderWidth: 2,
-                borderColor: '#4ECDC4'
-              }}
-            />
-          </View>
-        )}
-        <View
-          style={{
-            backgroundColor: isSender ? "#4ECDC4" : "#2d2d2d",
-            flex: 1,
-            padding: 12,
-            borderRadius: 20,
-            borderBottomRightRadius: isSender ? 4 : 20,
-            borderBottomLeftRadius: isSender ? 20 : 4,
-            shadowColor: '#000',
-            shadowOffset: { width: 0, height: 2 },
-            shadowOpacity: 0.1,
-            shadowRadius: 3.84,
-            elevation: 3,
-          }}
-        >
-          {!isSender && (
-            <Text style={{ 
-              fontWeight: "600", 
-              marginBottom: 4,
-              color: '#4ECDC4',
-              fontSize: 12
-            }}>
-              {item.senderName}
-            </Text>
-          )}
-          <Text style={{ 
-            color: isSender ? "#000" : "#ffffff",
-            fontSize: 16,
-            lineHeight: 20
-          }}>
-            {item.content}
-          </Text>
-          <Text
-            style={{
-              fontSize: 11,
-              textAlign: "right",
-              marginTop: 6,
-              color: isSender ? "rgba(0,0,0,0.6)" : "rgba(255,255,255,0.6)",
-            }}
-          >
-            {new Date(item.$createdAt!).toLocaleTimeString([], {
-              hour: "2-digit",
-              minute: "2-digit",
-            })}
-          </Text>
-        </View>
-        {isSender && (
-          <View style={{
-            shadowColor: '#000',
-            shadowOffset: { width: 0, height: 2 },
-            shadowOpacity: 0.25,
-            shadowRadius: 3.84,
-            elevation: 5,
-          }}>
-            <Image
-              source={{ uri: user?.imageUrl || 'https://via.placeholder.com/40' }}
-              style={{ 
-                width: 36, 
-                height: 36, 
-                borderRadius: 18,
-                borderWidth: 2,
-                borderColor: '#4ECDC4'
-              }}
-            />
-          </View>
-        )}
-      </View>
-    );
-  };
-
   return (
     <>
-      <StatusBar barStyle="light-content" backgroundColor="#1a1a2e" />
       <Stack.Screen
         options={{
           headerTitle: chatRoom?.title,
-          headerStyle: {
-            backgroundColor: '#1a1a2e',
-          },
-          headerTintColor: '#fff',
-          headerTitleStyle: {
-            fontWeight: 'bold',
-            color: '#4ECDC4',
-          },
           headerRight: () => (
             <Link
               href={{
@@ -319,116 +232,123 @@ export default function ChatRoomScreen() {
                 params: { chat: chatRoomId as string },
               }}
             >
-              <View style={{
-                backgroundColor: 'rgba(78, 205, 196, 0.2)',
-                padding: 8,
-                borderRadius: 12,
-              }}>
-                <IconSymbol name="gearshape" size={20} color="#4ECDC4" />
-              </View>
+              <IconSymbol name="gearshape" size={24} color={Primary} />
             </Link>
           ),
         }}
       />
-<LinearGradient colors={['#1a1a2e', '#16213e', '#0f3460']} style={{ flex: 1 }}>
-  <SafeAreaView style={{ flex: 1 }} edges={["bottom"]}>
-    <KeyboardAvoidingView
-      style={{ flex: 1 }}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
-      keyboardVerticalOffset={Platform.OS === "ios" ? headerHeight : 0}
-    >
-      <View style={{ flex: 1 }}>
-        {/* Messages */}
-        <LegendList
-          data={messages}
-          renderItem={renderMessage}
-          keyExtractor={(item) => item?.$id ?? "unknown"}
-          contentContainerStyle={{
-            padding: 8,
-            paddingBottom: Platform.OS === "android" ? keyboardHeight + 80 : 16, // Add extra for input
-          }}
+      <SafeAreaView style={{ flex: 1 }} edges={["bottom"]}>
+        <KeyboardAvoidingView
           style={{ flex: 1 }}
-          recycleItems={true}
-          initialScrollIndex={messages.length - 1}
-          alignItemsAtEnd
-          maintainScrollAtEnd
-          maintainScrollAtEndThreshold={0.5}
-          maintainVisibleContentPosition
-          estimatedItemSize={120}
-          showsVerticalScrollIndicator={false}
-        />
-
-        {/* Input */}
-        <View
-          style={{
-            backgroundColor: 'rgba(45, 45, 45, 0.95)',
-            paddingHorizontal: 16,
-            paddingVertical: 10,
-            borderTopWidth: 1,
-            borderTopColor: 'rgba(78, 205, 196, 0.3)',
-            paddingBottom: Platform.OS === "android" ? keyboardHeight : 0, // Push input above keyboard
-          }}
+          behavior={"padding"}
+          keyboardVerticalOffset={headerHeight}
         >
+          <LegendList
+            data={messages}
+            renderItem={({ item }) => {
+              const isSender = item.senderId === user?.id;
+              return (
+                <View
+                  style={{
+                    padding: 10,
+                    borderRadius: 10,
+                    flexDirection: "row",
+                    alignItems: "flex-end",
+                    gap: 6,
+                    maxWidth: "80%",
+                    alignSelf: isSender ? "flex-end" : "flex-start",
+                  }}
+                >
+                  {!isSender && (
+                    <Image
+                      source={{ uri: item.senderPhoto }}
+                      style={{ width: 30, height: 30, borderRadius: 15 }}
+                    />
+                  )}
+                  <View
+                    style={{
+                      backgroundColor: isSender ? "#007AFF" : "#161616",
+                      flex: 1,
+                      padding: 10,
+                      borderRadius: 10,
+                    }}
+                  >
+                    <Text style={{ fontWeight: "500", marginBottom: 4 }}>
+                      {item.senderName}
+                    </Text>
+                    <Text>{item.content}</Text>
+                    <Text
+                      style={{
+                        fontSize: 10,
+                        textAlign: "right",
+                      }}
+                    >
+                      {new Date(item.$createdAt!).toLocaleTimeString([], {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
+                    </Text>
+                  </View>
+                </View>
+              );
+            }}
+            keyExtractor={(item) => item?.$id ?? "unknown"}
+            contentContainerStyle={{ padding: 10 }}
+            recycleItems={true}
+            initialScrollIndex={messages.length - 1}
+            alignItemsAtEnd // Aligns to the end of the screen, so if there's only a few items there will be enough padding at the top to make them appear to be at the bottom.
+            maintainScrollAtEnd // prop will check if you are already scrolled to the bottom when data changes, and if so it keeps you scrolled to the bottom.
+            maintainScrollAtEndThreshold={0.5} // prop will check if you are already scrolled to the bottom when data changes, and if so it keeps you scrolled to the bottom.
+            maintainVisibleContentPosition //Automatically adjust item positions when items are added/removed/resized above the viewport so that there is no shift in the visible content.
+            estimatedItemSize={100} // estimated height of the item
+            // getEstimatedItemSize={(info) => { // use if items are different known sizes
+            //   console.log("info", info);
+            // }}
+          />
           <View
             style={{
-              backgroundColor: '#2d2d2d',
-              flexDirection: "row",
-              alignItems: "flex-end",
-              borderRadius: 25,
               borderWidth: 1,
-              borderColor: '#4ECDC4',
-              paddingHorizontal: 4,
-              shadowColor: '#000',
-              shadowOffset: { width: 0, height: 2 },
-              shadowOpacity: 0.25,
-              shadowRadius: 3.84,
-              elevation: 5,
+              borderColor: '#333',
+              flexDirection: "row",
+              alignItems: "center",
+              borderRadius: 100,
+              marginBottom: 6,
+              marginHorizontal: 10,
             }}
           >
             <TextInput
               ref={textInputRef}
-              placeholder="Type a message..."
+              placeholder="Type a message"
               style={{
-                minHeight: 44,
-                maxHeight: 120,
+                minHeight: 40,
                 color: "white",
-                flex: 1,
-                paddingHorizontal: 16,
-                paddingVertical: 12,
-                fontSize: 16,
+                flexShrink: 1, // prevent pushing the send button out of the screen
+                flexGrow: 1, // allow the text input to grow keeping the send button to the right
+                padding: 10,
               }}
-              placeholderTextColor="rgba(255,255,255,0.5)"
+              placeholderTextColor={"gray"}
               multiline
               value={messageContent}
               onChangeText={setMessageContent}
-              textAlignVertical="center"
             />
             <Pressable
               style={{
-                width: 44,
-                height: 44,
+                width: 50,
+                height: 50,
                 alignItems: "center",
                 justifyContent: "center",
-                backgroundColor: messageContent.trim() ? '#4ECDC4' : 'transparent',
-                borderRadius: 22,
-                margin: 4,
               }}
               onPress={handleSendMessage}
-              disabled={!messageContent.trim()}
             >
               <IconSymbol
-                name="paperplane.fill"
-                size={20}
-                color={messageContent.trim() ? "#000" : "rgba(255,255,255,0.3)"}
+                name="paperplane"
+                size={24}
+                color={messageContent ? Primary : "gray"}
               />
             </Pressable>
           </View>
-        </View>
-      </View>
-    </KeyboardAvoidingView>
-  </SafeAreaView>
-</LinearGradient>
-
+        </KeyboardAvoidingView>
+      </SafeAreaView>
     </>
   );
 }

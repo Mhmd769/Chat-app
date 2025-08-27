@@ -1,13 +1,11 @@
 import { tokenCache } from "@/utils/cache";
 import { ClerkLoaded, ClerkProvider } from "@clerk/clerk-expo";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { DarkTheme, ThemeProvider } from "@react-navigation/native";
 import { Slot } from "expo-router";
 import { StatusBar } from "react-native";
-
-if (typeof global !== 'undefined' && !global.AsyncStorage) {
-  global.AsyncStorage = AsyncStorage;
-}
+// Ensure no accidental web localStorage usage causes getItem undefined errors
+// in React Native environments. Clerk uses the provided tokenCache so we don't
+// need AsyncStorage directly here.
 
 export default function RootLayout() {
   const publishableKey = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY!;
