@@ -21,6 +21,16 @@ const MAPPING = {
   'chevron.left': 'chevron-left',
     'plus': 'add', // <--- Add this
     'paperplane': 'send', // <--- Add this
+    'mic.fill': 'mic', // <--- Add this
+    'stop.fill': 'stop', // <--- Add this
+    'pause.fill': 'pause', // <--- Add this
+    'ellipsis': 'more-horiz', // <--- Add this
+    'checkmark': 'check', // <--- Add this
+    'chevron.down': 'expand-more', // <--- Add this
+    'camera.fill': 'photo-camera', // <--- Add this
+    'photo.fill': 'photo', // <--- Add this
+    'xmark': 'close', // <--- Add this
+    'play.fill': 'play-arrow', // <--- Add this
 
 } as IconMapping;
 
