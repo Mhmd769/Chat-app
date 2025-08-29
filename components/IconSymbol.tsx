@@ -31,6 +31,7 @@ const MAPPING = {
     'photo.fill': 'photo', // <--- Add this
     'xmark': 'close', // <--- Add this
     'play.fill': 'play-arrow', // <--- Add this
+    'arrow.up': 'send', // <--- Add this
 
 } as IconMapping;
 

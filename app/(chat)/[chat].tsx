@@ -1,4 +1,3 @@
-import { Primary } from "@/assets/colors";
 import { IconSymbol } from "@/components/IconSymbol";
 import { Text } from "@/components/Text";
 import { appwriteConfig, client, db, storage } from "@/utils/appwrite";
@@ -10,30 +9,31 @@ import { ID, Query } from "appwrite";
 import { Audio } from 'expo-av';
 import * as FileSystem from 'expo-file-system';
 import * as ImagePicker from 'expo-image-picker';
-import { Link, Stack, useLocalSearchParams } from "expo-router";
+import { Link, Stack, useLocalSearchParams, useRouter } from "expo-router";
 import * as React from "react";
 import {
-  ActivityIndicator,
-  Alert,
-  Animated,
-  Dimensions,
-  Image,
-  KeyboardAvoidingView,
-  Modal,
-  Platform,
-  Pressable,
-  TextInput,
-  TouchableWithoutFeedback,
-  View,
-  StatusBar
+    ActivityIndicator,
+    Alert,
+    Animated,
+    Dimensions,
+    Image,
+    KeyboardAvoidingView,
+    Modal,
+    Platform,
+    Pressable,
+    StatusBar,
+    TextInput,
+    TouchableWithoutFeedback,
+    View
 } from "react-native";
-import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
 export default function ChatRoomScreen() {
   const { chat: chatRoomId } = useLocalSearchParams();
   const { user } = useUser();
+  const router = useRouter();
 
   if (!chatRoomId) {
     return (
@@ -74,6 +74,7 @@ export default function ChatRoomScreen() {
   const soundRef = React.useRef<Audio.Sound | null>(null);
   const [currentPlayingId, setCurrentPlayingId] = React.useState<string | null>(null);
   const [isPlaying, setIsPlaying] = React.useState(false);
+  const [messageMenuFor, setMessageMenuFor] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     handleFirstLoad();
@@ -231,6 +232,113 @@ export default function ChatRoomScreen() {
       console.error(error);
     }
   }
+
+  const confirmDeleteMessage = (message: Message) => {
+    Alert.alert(
+      'Delete message',
+      'Are you sure you want to delete this message?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => deleteMessage(message),
+        },
+      ]
+    );
+  };
+
+  const deleteMessage = async (message: Message) => {
+    try {
+      if (!message.$id) return;
+      // Delete associated media file if present
+      if (message.type === 'imageUri' || message.type === 'audioUri') {
+        const fileId = extractFileIdFromStorageUrl(message.content);
+        if (fileId) {
+          try {
+            await storage.deleteFile(appwriteConfig.bucket!, fileId);
+          } catch (e) {
+            console.warn('Failed to delete storage file for message', fileId, e);
+          }
+        }
+      }
+      await db.deleteDocument(
+        appwriteConfig.db,
+        appwriteConfig.col.messages,
+        message.$id
+      );
+      setMessages((prev) => prev.filter((m) => m.$id !== message.$id));
+    } catch (error) {
+      console.error('Failed to delete message', error);
+      Alert.alert('Error', 'Failed to delete message. Please try again.');
+    } finally {
+      setMessageMenuFor(null);
+    }
+  };
+
+  const extractFileIdFromStorageUrl = (url: string): string | null => {
+    try {
+      // Matches .../storage/buckets/{bucket}/files/{fileId}/(view|download)
+      const match = url.match(/\/files\/([^\/\?]+)(?:[\/?]|$)/i);
+      return match && match[1] ? match[1] : null;
+    } catch {
+      return null;
+    }
+  };
+
+  const confirmDeleteRoom = () => {
+    Alert.alert(
+      'Delete chat',
+      'Delete this chat and all messages (including media)?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Delete', style: 'destructive', onPress: handleDeleteRoom },
+      ]
+    );
+  };
+
+  const handleDeleteRoom = async () => {
+    try {
+      // 1) Fetch messages in this room
+      const { documents } = await db.listDocuments(
+        appwriteConfig.db,
+        appwriteConfig.col.messages,
+        [Query.equal('chatRoomId', chatRoomId as string), Query.limit(100)]
+      );
+
+      // 2) Delete media files and message documents
+      for (const msg of documents as unknown as Message[]) {
+        if (msg.type === 'imageUri' || msg.type === 'audioUri') {
+          const fileId = extractFileIdFromStorageUrl(msg.content);
+          if (fileId) {
+            try { await storage.deleteFile(appwriteConfig.bucket!, fileId); } catch {}
+          }
+        }
+        try {
+          if (msg.$id) {
+            await db.deleteDocument(
+              appwriteConfig.db,
+              appwriteConfig.col.messages,
+              msg.$id
+            );
+          }
+        } catch {}
+      }
+
+      // 3) Delete the room itself
+      await db.deleteDocument(
+        appwriteConfig.db,
+        appwriteConfig.col.chatrooms,
+        chatRoomId as string
+      );
+
+      // 4) Navigate back to rooms list
+      router.back();
+    } catch (error) {
+      console.error('Failed to delete chat room', error);
+      Alert.alert('Error', 'Failed to delete chat room.');
+    }
+  };
 
   const uploadFile = async (uri: string, mediaType: 'image' | 'audio', mimeType?: string): Promise<string | null> => {
     try {
@@ -558,7 +666,7 @@ export default function ChatRoomScreen() {
             onPress={() => handlePlayPauseAudio(item.content!, item.$id || item.content)}
           >
             <IconSymbol 
-              name={isCurrentlyPlaying ? "pause.fill" : "play.fill"} 
+              name={isCurrentlyPlaying ? "stop.fill" : "play.fill"} 
               size={14} 
               color="white" 
             />
@@ -572,7 +680,7 @@ export default function ChatRoomScreen() {
               marginBottom: 4,
             }}>
               {/* Audio waveform representation */}
-              {[...Array(15)].map((_, i) => (
+              {[...Array(30)].map((_, i) => (
                 <View
                   key={i}
                   style={{
@@ -637,14 +745,19 @@ export default function ChatRoomScreen() {
           },
           headerTintColor: '#FFFFFF',
           headerRight: () => (
-            <Link
-              href={{
-                pathname: "/settings/[chat]",
-                params: { chat: chatRoomId as string },
-              }}
-            >
-              <IconSymbol name="ellipsis" size={24} color="#8696A0" />
-            </Link>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <Pressable onPress={confirmDeleteRoom} style={{ paddingHorizontal: 8 }}>
+                <IconSymbol name="trash" size={20} color="#FF6B6B" />
+              </Pressable>
+              <Link
+                href={{
+                  pathname: "/settings/[chat]",
+                  params: { chat: chatRoomId as string },
+                }}
+              >
+                <IconSymbol name="ellipsis" size={24} color="#8696A0" />
+              </Link>
+            </View>
           ),
         }}
       />
@@ -696,7 +809,7 @@ export default function ChatRoomScreen() {
                       />
                     )}
                     
-                    <View
+                    <Pressable
                       style={{
                         backgroundColor: isSender ? '#005C4B' : '#1F2C34',
                         maxWidth: screenWidth * 0.75,
@@ -712,6 +825,12 @@ export default function ChatRoomScreen() {
                         shadowOpacity: 0.2,
                         shadowRadius: 2,
                         elevation: 2,
+                      }}
+                      onLongPress={() => {
+                        if (isSender) {
+                          setMessageMenuFor(item.$id || null);
+                          confirmDeleteMessage(item);
+                        }
                       }}
                     >
                       {!isSender && (
@@ -764,7 +883,7 @@ export default function ChatRoomScreen() {
                           </View>
                         )}
                       </View>
-                    </View>
+                    </Pressable>
                   </View>
                 </View>
               );

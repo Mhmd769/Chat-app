@@ -20,7 +20,7 @@ interface Message {
   senderName: string;
   senderPhoto: string;
   chatRoomId: string;
-  type: 'text' | 'image' | 'audio';
+  type: 'text' | 'image' | 'audio' | 'fileName' | 'imageUri' | 'audioUri';
 }
 
 
@@ -32,3 +32,4 @@ interface User {
 }
 
 export type { ChatRoom, Message, User };
+
