@@ -1,12 +1,16 @@
 import { IconSymbol } from "@/components/IconSymbol";
 import { ClerkLoaded, useUser } from "@clerk/clerk-expo";
-import { HeaderTitle } from "@react-navigation/elements";
 import { Link, Redirect, Stack } from "expo-router";
-import { Image, View, StyleSheet } from "react-native";
+import { Image, StyleSheet, View } from "react-native";
 
 export default function RootLayout() {
   const { isSignedIn } = useUser();
   const { user } = useUser();
+
+  // Disable Clerk passkeys in Expo (until native support is configured)
+  (global as any).ClerkExpoPasskeys = {
+    isSupported: async () => false,
+  };
 
   return (
     <ClerkLoaded>

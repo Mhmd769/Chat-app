@@ -1,17 +1,17 @@
 import * as React from "react";
-import { View, Image, SafeAreaView } from "react-native";
+import { Alert, Image, SafeAreaView, View } from "react-native";
 
-import * as WebBrowser from "expo-web-browser";
-import * as AuthSession from "expo-auth-session";
+import { Button } from "@/components/Buttons";
+import { Text } from "@/components/Text";
 import {
-  isClerkAPIResponseError,
-  useSignIn,
-  useSSO,
-  useUser,
+    isClerkAPIResponseError,
+    useSignIn,
+    useSSO,
+    useUser,
 } from "@clerk/clerk-expo";
 import { ClerkAPIError } from "@clerk/types";
-import { Text } from "@/components/Text";
-import { Button } from "@/components/Buttons";
+import * as AuthSession from "expo-auth-session";
+import * as WebBrowser from "expo-web-browser";
 
 // Handle any pending authentication sessions
 WebBrowser.maybeCompleteAuthSession();
@@ -45,21 +45,10 @@ export default function Index() {
   }, []);
 
   const signInWithPasskey = async () => {
-    try {
-      const signInAttempt = await signIn?.authenticateWithPasskey({
-        flow: "discoverable",
-      });
-
-      if (signInAttempt?.status === "complete") {
-        if (setActive !== undefined) {
-          await setActive({ session: signInAttempt.createdSessionId });
-        }
-      } else {
-        console.error(JSON.stringify(signInAttempt, null, 2));
-      }
-    } catch (err) {
-      console.error("Error:", JSON.stringify(err, null, 2));
-    }
+    Alert.alert(
+      "Passkeys not available",
+      "This build doesn't support passkeys. Use Google sign-in instead."
+    );
   };
 
   return (

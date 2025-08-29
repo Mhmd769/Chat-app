@@ -14,10 +14,25 @@ export default function RootLayout() {
     throw new Error("Add EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY to your .env file");
   }
 
+  // Disable Clerk passkeys globally (RN/Expo) unless native passkeys support is configured
+  (global as any).ClerkExpoPasskeys = {
+    isSupported: async () => false,
+  };
+
   return (
     <ClerkProvider
       publishableKey={publishableKey}
       tokenCache={tokenCache}
+      __experimental_passkeys={{
+        isSupported: () => false,
+        isAutoFillSupported: async () => false,
+        get: async () => {
+          throw new Error('Passkeys disabled in this build');
+        },
+        create: async () => {
+          throw new Error('Passkeys disabled in this build');
+        },
+      }}
     >
       <ClerkLoaded>
         <ThemeProvider value={DarkTheme}>

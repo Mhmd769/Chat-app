@@ -1,5 +1,6 @@
 import { IconSymbol } from "@/components/IconSymbol";
 import { Text } from "@/components/Text";
+import { generateAIReply } from "@/utils/ai";
 import { appwriteConfig, client, db, storage } from "@/utils/appwrite";
 import { ChatRoom, Message } from "@/utils/types";
 import { useUser } from "@clerk/clerk-expo";
@@ -75,6 +76,8 @@ export default function ChatRoomScreen() {
   const [currentPlayingId, setCurrentPlayingId] = React.useState<string | null>(null);
   const [isPlaying, setIsPlaying] = React.useState(false);
   const [messageMenuFor, setMessageMenuFor] = React.useState<string | null>(null);
+  const [showMentions, setShowMentions] = React.useState(false);
+  const [mentionQuery, setMentionQuery] = React.useState("");
 
   React.useEffect(() => {
     handleFirstLoad();
@@ -561,10 +564,77 @@ export default function ChatRoomScreen() {
       setMessageContent("");
       
       setTimeout(() => scrollToBottom(), 100);
+      // If message mentions @ai, generate a reply
+      if (/(^|\s)@ai(\s|$)/i.test(message.content)) {
+        triggerAIReply(message.content);
+      }
     } catch (error) {
       console.error(error);
     }
   }
+
+  const handleChangeText = (text: string) => {
+    setMessageContent(text);
+    // Detect mention trigger at the end of the current input token
+    // Matches last token like "@", "@a", "@ai"
+    const match = text.match(/(^|\s)@([a-z0-9_]*)$/i);
+    if (match) {
+      setShowMentions(true);
+      setMentionQuery(match[2]?.toLowerCase() ?? "");
+    } else {
+      setShowMentions(false);
+      setMentionQuery("");
+    }
+  };
+
+  const availableMentions = React.useMemo(() => {
+    const base = [{ id: 'ai', label: 'AI Assistant', handle: 'ai' }];
+    const q = mentionQuery.trim();
+    if (!q) return base;
+    return base.filter(x => x.handle.toLowerCase().startsWith(q));
+  }, [mentionQuery]);
+
+  const insertMention = (handle: string) => {
+    // Replace the trailing mention token with the selected handle
+    const replaced = messageContent.replace(/(@[a-z0-9_]*)$/i, `@${handle} `);
+    setMessageContent(replaced);
+    setShowMentions(false);
+    setMentionQuery("");
+    // re-focus input
+    setTimeout(() => textInputRef.current?.focus(), 0);
+  };
+
+  const triggerAIReply = async (promptText: string) => {
+    try {
+      const cleaned = promptText.replace(/(^|\s)@ai(\s|$)/i, ' ').trim();
+      const reply = await generateAIReply(cleaned, {
+        systemPrompt:
+          'You are a helpful chat assistant inside a mobile chat app. Keep replies concise. If asked about images or audio, describe in text only.',
+        maxOutputTokens: 300,
+        temperature: 0.6,
+      });
+
+const botMessage: Message = {
+  content: reply,
+  senderId: 'ai-bot',
+  senderName: 'AI Assistant',
+  senderPhoto: 'https://www.gravatar.com/avatar/?d=mp&f=y', // default profile pic
+  chatRoomId: chatRoomId as string,
+  type: 'fileName',
+} as any;
+
+
+      await db.createDocument(
+        appwriteConfig.db,
+        appwriteConfig.col.messages,
+        ID.unique(),
+        botMessage
+      );
+    } catch (e) {
+      console.error('AI reply failed', e);
+      Alert.alert('AI Error', 'Failed to generate AI reply.');
+    }
+  };
 
   const formatDuration = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
@@ -1103,9 +1173,63 @@ export default function ChatRoomScreen() {
                 placeholderTextColor="#8696A0"
                 multiline
                 value={messageContent}
-                onChangeText={setMessageContent}
+                onChangeText={handleChangeText}
                 editable={!isRecording}
               />
+
+              {showMentions && (
+                <View
+                  style={{
+                    position: 'absolute',
+                    bottom: 60,
+                    left: 60,
+                    right: 60,
+                    backgroundColor: '#1F2C34',
+                    borderRadius: 12,
+                    paddingVertical: 8,
+                    paddingHorizontal: 8,
+                    shadowColor: '#000',
+                    shadowOffset: { width: 0, height: 4 },
+                    shadowOpacity: 0.3,
+                    shadowRadius: 8,
+                    elevation: 6,
+                  }}
+                >
+                  {availableMentions.map((m) => (
+                    <Pressable
+                      key={m.id}
+                      onPress={() => insertMention(m.handle)}
+                      style={{
+                        paddingVertical: 10,
+                        paddingHorizontal: 12,
+                        borderRadius: 8,
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                      }}
+                    >
+                      <View style={{
+                        width: 28,
+                        height: 28,
+                        borderRadius: 14,
+                        backgroundColor: '#25D366',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        marginRight: 10,
+                      }}>
+                        <IconSymbol name="sparkles" size={14} color="#0B141B" />
+                      </View>
+                      <Text style={{ color: '#E9EDEF', fontSize: 15 }}>
+                        @{m.handle} — {m.label}
+                      </Text>
+                    </Pressable>
+                  ))}
+                  {availableMentions.length === 0 && (
+                    <View style={{ padding: 10 }}>
+                      <Text style={{ color: '#8696A0' }}>No matches</Text>
+                    </View>
+                  )}
+                </View>
+              )}
               
               {messageContent.trim() ? (
                 <Pressable
